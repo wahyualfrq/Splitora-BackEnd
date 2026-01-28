@@ -9,16 +9,19 @@ class PythonService
     public function run(string $mode, string $pdfPath, ?string $excelPath = null): string
     {
         // Python binary di Linux container
-        $pythonBinary = 'python3';
+        $pythonBinary = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN'
+            ? 'python'
+            : 'python3';
+
 
         // Path script Python (HARUS sesuai struktur repo)
-        $scriptPath = base_path('app/python/split.py');
+        $scriptPath = base_path('python/process.py');
 
-        if (! file_exists($scriptPath)) {
+        if (!file_exists($scriptPath)) {
             throw new \RuntimeException("Script Python tidak ditemukan: {$scriptPath}");
         }
 
-        if (! file_exists($pdfPath)) {
+        if (!file_exists($pdfPath)) {
             throw new \RuntimeException("PDF tidak ditemukan: {$pdfPath}");
         }
 
@@ -30,7 +33,7 @@ class PythonService
         ];
 
         if ($mode === 'rename' && $excelPath) {
-            if (! file_exists($excelPath)) {
+            if (!file_exists($excelPath)) {
                 throw new \RuntimeException("Excel tidak ditemukan: {$excelPath}");
             }
             $command[] = $excelPath;
@@ -41,7 +44,7 @@ class PythonService
         $process->setTimeout(300);
         $process->run();
 
-        if (! $process->isSuccessful()) {
+        if (!$process->isSuccessful()) {
             throw new \RuntimeException(
                 "Python error:\n" . $process->getErrorOutput()
             );
@@ -49,7 +52,7 @@ class PythonService
 
         $zipPath = trim($process->getOutput());
 
-        if ($zipPath === '' || ! file_exists($zipPath)) {
+        if ($zipPath === '' || !file_exists($zipPath)) {
             throw new \RuntimeException(
                 "Python tidak mengembalikan path ZIP.\nOutput:\n" . $zipPath
             );

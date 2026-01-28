@@ -4,7 +4,10 @@ import shutil
 import pandas as pd
 from PyPDF2 import PdfReader, PdfWriter
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# ==============================
+# PATH FIX (python ada di /python)
+# ==============================
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 STORAGE_DIR = os.path.join(BASE_DIR, "storage", "app")
 UPLOAD_DIR = os.path.join(STORAGE_DIR, "upload")
@@ -75,8 +78,29 @@ def zip_folder(source_dir, zip_path):
     shutil.rmtree(source_dir)
 
 
+def open_pdf_reader(pdf_path):
+    try:
+        reader = PdfReader(pdf_path)
+    except Exception as e:
+        print(f"ERROR: Gagal membaca PDF: {e}")
+        sys.exit(1)
+
+    if reader.is_encrypted:
+        try:
+            reader.decrypt("")
+        except Exception as e:
+            print(f"ERROR: PDF terenkripsi dan tidak bisa dibuka: {e}")
+            sys.exit(1)
+
+    if len(reader.pages) == 0:
+        print("ERROR: PDF tidak memiliki halaman")
+        sys.exit(1)
+
+    return reader
+
+
 def split_pdf_only(pdf_path):
-    reader = PdfReader(pdf_path)
+    reader = open_pdf_reader(pdf_path)
 
     output_dir = os.path.join(TMP_DIR, "output_split")
     os.makedirs(output_dir, exist_ok=True)
@@ -91,12 +115,14 @@ def split_pdf_only(pdf_path):
 
     zip_path = os.path.join(TMP_DIR, "result_split.zip")
     zip_folder(output_dir, zip_path)
+
+    # Laravel membaca path dari stdout
     print(zip_path)
 
 
 def split_pdf_and_rename(pdf_path, excel_path):
+    reader = open_pdf_reader(pdf_path)
     names = read_excel_names(excel_path)
-    reader = PdfReader(pdf_path)
 
     if len(reader.pages) != len(names):
         print(
@@ -119,6 +145,8 @@ def split_pdf_and_rename(pdf_path, excel_path):
 
     zip_path = os.path.join(TMP_DIR, "result_rename.zip")
     zip_folder(output_dir, zip_path)
+
+    # Laravel membaca path dari stdout
     print(zip_path)
 
 
