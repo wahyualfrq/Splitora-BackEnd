@@ -4,52 +4,76 @@ import shutil
 import pandas as pd
 from PyPDF2 import PdfReader, PdfWriter
 
-# ===============================
-# PATH DASAR (KUNCI UTAMA)
-# ===============================
-
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 STORAGE_DIR = os.path.join(BASE_DIR, "storage", "app")
 UPLOAD_DIR = os.path.join(STORAGE_DIR, "upload")
 TMP_DIR = os.path.join(STORAGE_DIR, "tmp")
 
-# Pastikan folder ada
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(TMP_DIR, exist_ok=True)
 
-# ===============================
-# UTILITIES
-# ===============================
+
+def is_number(value):
+    return isinstance(value, (int, float)) and not pd.isna(value)
+
+
+def clean_name(value):
+    if isinstance(value, str):
+        value = value.strip()
+        if value:
+            return value
+    return None
+
+
+def detect_name_column(df):
+    columns_lower = [str(col).strip().lower() for col in df.columns]
+
+    for idx, col in enumerate(columns_lower):
+        if "nama" in col or "name" in col:
+            return idx
+
+    first_col = df.iloc[:, 0]
+    sample_value = next((v for v in first_col if not pd.isna(v)), None)
+
+    if is_number(sample_value):
+        if df.shape[1] >= 2:
+            return 1
+        raise ValueError("Tidak ditemukan kolom nama")
+
+    return 0
+
 
 def read_excel_names(excel_path):
     df = pd.read_excel(excel_path)
-    first_column = df.iloc[:, 0]
+
+    if df.empty:
+        raise ValueError("File Excel kosong")
+
+    name_col_index = detect_name_column(df)
+    name_column = df.iloc[:, name_col_index]
 
     names = []
-    for value in first_column:
-        if isinstance(value, str) and value.strip():
-            names.append(value.strip())
+    for value in name_column:
+        name = clean_name(value)
+        if name:
+            names.append(name)
+
+    if not names:
+        raise ValueError("Tidak ada data nama yang valid")
 
     return names
 
 
 def zip_folder(source_dir, zip_path):
-    # Pastikan source tidak kosong
     if not os.listdir(source_dir):
-        print("ERROR: Folder output kosong, tidak ada file untuk di-zip")
+        print("ERROR: Folder output kosong")
         sys.exit(1)
 
     base_name = zip_path.replace(".zip", "")
     shutil.make_archive(base_name, "zip", source_dir)
-
-    # Bersihkan folder hasil split setelah zip
     shutil.rmtree(source_dir)
 
-
-# ===============================
-# MODE: SPLIT SAJA
-# ===============================
 
 def split_pdf_only(pdf_path):
     reader = PdfReader(pdf_path)
@@ -67,14 +91,8 @@ def split_pdf_only(pdf_path):
 
     zip_path = os.path.join(TMP_DIR, "result_split.zip")
     zip_folder(output_dir, zip_path)
-
-    # WAJIB: print path zip agar Laravel bisa baca
     print(zip_path)
 
-
-# ===============================
-# MODE: SPLIT + RENAME
-# ===============================
 
 def split_pdf_and_rename(pdf_path, excel_path):
     names = read_excel_names(excel_path)
@@ -101,14 +119,8 @@ def split_pdf_and_rename(pdf_path, excel_path):
 
     zip_path = os.path.join(TMP_DIR, "result_rename.zip")
     zip_folder(output_dir, zip_path)
-
-    # WAJIB: print path zip agar Laravel bisa baca
     print(zip_path)
 
-
-# ===============================
-# MAIN
-# ===============================
 
 def main():
     if len(sys.argv) < 3:
@@ -124,8 +136,9 @@ def main():
 
     if mode == "split":
         split_pdf_only(pdf_path)
+        return
 
-    elif mode == "rename":
+    if mode == "rename":
         if len(sys.argv) < 4:
             print("ERROR: Excel wajib untuk mode rename")
             sys.exit(1)
@@ -137,10 +150,10 @@ def main():
             sys.exit(1)
 
         split_pdf_and_rename(pdf_path, excel_path)
+        return
 
-    else:
-        print("ERROR: Mode tidak dikenal (gunakan split atau rename)")
-        sys.exit(1)
+    print("ERROR: Mode tidak dikenal")
+    sys.exit(1)
 
 
 if __name__ == "__main__":
