@@ -8,10 +8,19 @@ class PythonService
 {
     public function run(string $mode, string $pdfPath, ?string $excelPath = null): string
     {
-        // WAJIB: python.exe BUKAN installer
-        $pythonBinary = 'C:\\Users\\User\\AppData\\Local\\Programs\\Python\\Python314\\python.exe';
+        // Python binary di Linux container
+        $pythonBinary = 'python3';
 
-        $scriptPath = base_path('python/process.py');
+        // Path script Python (HARUS sesuai struktur repo)
+        $scriptPath = base_path('app/python/split.py');
+
+        if (! file_exists($scriptPath)) {
+            throw new \RuntimeException("Script Python tidak ditemukan: {$scriptPath}");
+        }
+
+        if (! file_exists($pdfPath)) {
+            throw new \RuntimeException("PDF tidak ditemukan: {$pdfPath}");
+        }
 
         $command = [
             $pythonBinary,
@@ -21,6 +30,9 @@ class PythonService
         ];
 
         if ($mode === 'rename' && $excelPath) {
+            if (! file_exists($excelPath)) {
+                throw new \RuntimeException("Excel tidak ditemukan: {$excelPath}");
+            }
             $command[] = $excelPath;
         }
 
@@ -29,17 +41,20 @@ class PythonService
         $process->setTimeout(300);
         $process->run();
 
-        // Ambil output Python (path ZIP)
-        $output = trim($process->getOutput());
-
-        // Validasi hasil
-        if ($output === '' || ! file_exists($output)) {
+        if (! $process->isSuccessful()) {
             throw new \RuntimeException(
-                "Python gagal menghasilkan ZIP.\nSTDERR:\n" .
-                $process->getErrorOutput()
+                "Python error:\n" . $process->getErrorOutput()
             );
         }
 
-        return $output;
+        $zipPath = trim($process->getOutput());
+
+        if ($zipPath === '' || ! file_exists($zipPath)) {
+            throw new \RuntimeException(
+                "Python tidak mengembalikan path ZIP.\nOutput:\n" . $zipPath
+            );
+        }
+
+        return $zipPath;
     }
 }
