@@ -3,17 +3,13 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use App\Services\PythonService;
 
 class SplitoraController extends Controller
 {
-    /**
-     * Upload file lalu jalankan Python
-     */
     public function process(Request $request, PythonService $python)
     {
-        // 1. Validasi dasar
+        // 1. Validasi PDF
         if (! $request->hasFile('pdf')) {
             return response()->json([
                 'success' => false,
@@ -21,25 +17,43 @@ class SplitoraController extends Controller
             ], 400);
         }
 
-        // 2. Pastikan folder ada
-        Storage::disk('local')->makeDirectory('upload');
-        Storage::disk('local')->makeDirectory('tmp');
+        // 2. Normalisasi & validasi mode
+        $mode = strtolower(trim($request->input('mode', 'split')));
 
-        // 3. Bersihkan upload lama
-        Storage::disk('local')->delete(
-            Storage::disk('local')->files('upload')
-        );
+        if (! in_array($mode, ['split', 'rename'], true)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Mode tidak valid'
+            ], 400);
+        }
 
-        // 4. Simpan PDF
-        $pdfPath = Storage::disk('local')->putFileAs(
-            'upload',
-            $request->file('pdf'),
-            'input.pdf'
-        );
+        // 3. Siapkan folder
+        $uploadDir = storage_path('app/upload');
+        $tmpDir = storage_path('app/tmp');
 
-        // 5. Simpan Excel jika mode rename
+        if (! is_dir($uploadDir)) {
+            mkdir($uploadDir, 0777, true);
+        }
+
+        if (! is_dir($tmpDir)) {
+            mkdir($tmpDir, 0777, true);
+        }
+
+        // 4. Bersihkan file lama
+        foreach (glob($uploadDir . '/*') as $file) {
+            if (is_file($file)) unlink($file);
+        }
+
+        foreach (glob($tmpDir . '/*') as $file) {
+            if (is_file($file)) unlink($file);
+        }
+
+        // 5. Simpan PDF
+        $pdfPath = $uploadDir . '/input.pdf';
+        $request->file('pdf')->move($uploadDir, 'input.pdf');
+
+        // 6. Simpan Excel jika rename
         $excelPath = null;
-        $mode = $request->input('mode', 'split');
 
         if ($mode === 'rename') {
             if (! $request->hasFile('excel')) {
@@ -49,47 +63,42 @@ class SplitoraController extends Controller
                 ], 400);
             }
 
-            $excelPath = Storage::disk('local')->putFileAs(
-                'upload',
-                $request->file('excel'),
-                'input.xlsx'
-            );
+            $excelPath = $uploadDir . '/input.xlsx';
+            $request->file('excel')->move($uploadDir, 'input.xlsx');
         }
 
-        // 6. Jalankan Python
+        // 7. Jalankan Python
         $zipPath = $python->run(
             $mode,
-            storage_path('app/' . $pdfPath),
-            $excelPath ? storage_path('app/' . $excelPath) : null
+            $pdfPath,
+            $mode === 'rename' ? $excelPath : null
         );
 
-        // 7. Pastikan ZIP ada
-        if (! file_exists($zipPath)) {
+        // 8. Validasi ZIP
+        if (! $zipPath || ! file_exists($zipPath)) {
             return response()->json([
                 'success' => false,
                 'error' => 'ZIP tidak ditemukan',
-                'path' => $zipPath
+                'debug' => [
+                    'mode' => $mode,
+                    'zipPath' => $zipPath
+                ]
             ], 500);
         }
 
-        // 8. Kirim ZIP ke client
-        return response()->download(
-            $zipPath,
-            'splitora-result.zip'
-        );
+        return response()->download($zipPath, 'splitora-result.zip');
     }
 
-    /**
-     * Hapus file sementara (dipanggil saat refresh FE_toggle)
-     */
     public function clearTmp()
     {
-        Storage::disk('local')->delete(
-            Storage::disk('local')->files('tmp')
-        );
+        $tmpDir = storage_path('app/tmp');
 
-        return response()->json([
-            'success' => true
-        ]);
+        if (is_dir($tmpDir)) {
+            foreach (glob($tmpDir . '/*') as $file) {
+                if (is_file($file)) unlink($file);
+            }
+        }
+
+        return response()->json(['success' => true]);
     }
 }
